@@ -2,24 +2,65 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import Massabots from '../src/artifacts/contracts/Massabots.sol/Massabots.json';
 import Head from 'next/head';
+import InfoUser from '../components/InfoUser';
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+} from "@firebase/firestore";
+import { db } from "../firebase";
+import AddToWhitelist from '../components/AddToWhitelist';
 
 const MSBAdress = process.env.NEXT_PUBLIC_MSB_ADRESS;
 
 export default function Home() {
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [data, setData] = useState({});
   const [account, setAccount] = useState([]);
+  const [balance, setBalance] = useState();
+  const [countData, setCountData] = useState(3);
 
   useEffect(() => {
     fetchData();
     getAccounts();
+    getWhitelistCount();
   }, [])
+
+  useEffect(() => {
+    window.ethereum.addListener('connect', async (response) => {
+      getAccounts();
+    })
+    window.ethereum.on('accountsChanged', () => {
+      window.location.reload();
+    })
+  
+    window.ethereum.on('chainChanged', () => {
+      window.location.reload();
+    })
+  
+    window.ethereum.on('disconnect', () => {
+      window.location.reload();
+    })
+  })
+
+  const getWhitelistCount = () => {
+    onSnapshot(
+      query(collection(db, "whitelist"), orderBy("address", "desc")),
+      (snapshot) => {
+          setCountData(snapshot.size);
+      })
+  }
 
   const getAccounts = async () => {
     if(typeof window.ethereum !== 'undefined') {
       let accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       setAccount(accounts);
-      console.log(accounts[0]);
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const balance = await provider.getBalance(accounts[0]);
+      const balanceInEth = ethers.utils.formatEther(balance);
+      setBalance(balanceInEth);
     }
   }
 
@@ -27,6 +68,7 @@ export default function Home() {
     if(typeof window.ethereum !== 'undefined') {
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const contract = new ethers.Contract(MSBAdress, Massabots.abi, provider);
+      console.log(window.ethereum);
       try {
         const cost = await contract.cost();
         const totalSupply = await contract.totalSupply();
@@ -79,7 +121,21 @@ export default function Home() {
         <title>Create a stunning web3 app with cats</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      {error && <p>{error}</p>}
+      {error && <p className="bg-red-200 p-4 text-sm text-red-900">{error}</p>}
+      {success && <p className="bg-green-200 p-4 text-sm text-green-900">{success}</p>}
+      { account.length > 0 &&
+        <InfoUser account={account} balance={balance}/>
+      }
+      <AddToWhitelist
+        countData={countData}
+        setCountData={setCountData}
+        getCount={getWhitelistCount}
+        balance={balance}
+        setBalance={setBalance}
+        setError={setError}
+        setSuccess={setSuccess}
+        account={account}
+      />
       <h1 className='font-bold text-4xl mb-6'>Mint a Massabot NFT</h1>
       <p><span className='font-bold text-blue-600 text-2xl'>{data.totalSupply}</span> /30</p>
       <p>Each Massabot NFT costs {data.cost / 10**18} eth</p>
